@@ -356,49 +356,267 @@ async function answer(){
  const conflictText=conflictLevel>=.65?'تعارض قوي بين أدلة متزامنة':conflictLevel>=.45?'أدلة مختلطة تحتاج تحققاً':'لا يوجد تعارض قوي مثبت';
  if(g.e.size&&g.map.has(canon(cs[0]))&&g.map.has(canon(cs[1]))){try{let u=g.map.get(canon(cs[0])),v=g.map.get(canon(cs[1])),ex=exactUpdate(g.names.length,g.e,{u,v},'ADD'),gn=gnnPredict(g.names.length,g.e,u,v,'ADD');co={ex,gn}}catch{} }
  const localStrong=rel.filter(x=>(x.confidence||0)>=.55);
- $('understanding').innerHTML=explain(c,cs,tc,rel,co)+
-   `<p><b>خطة البحث:</b> ${analysis?analysis.queries.map(x=>'<span class="badge">'+esc(x)+'</span>').join(' '):'استخدام المستودع المحلي أولاً.'}</p>`+
-   `<p><b>تحليل الأدلة:</b> ${analysis?(analysis.resultCount+' نتيجة من '+analysis.sourceCount+' مصادر، '+analysis.signals.length+' إشارات علائقية مستخرجة.'):'لا حاجة لبحث خارجي.'} ${conflictLevel>=.45?'<span class="warn">'+conflictText+' (درجة '+Math.round(conflictLevel*100)+'%).</span>':conflictText}</p>`;
- let draft='لم أجد علاقة موثوقة كفاية.';
- if(rel.length){let r=rel[0];draft='أقوى علاقة مرشحة: «'+r.a+'» '+r.relation+' «'+r.b+'».\nدرجة المطابقة: '+Math.round((r._score||.5)*100)+'%.\nالثقة المسجلة: '+Math.round((r.confidence||0)*100)+'%.\nالزمن: '+(tc.period||fmt(qt))+'.';
-   if(analysis?.top)draft+='\nإشارة البحث الأقوى: '+analysis.top.label+' بناءً على '+analysis.top.count+' نتائج من '+analysis.top.sources.join(', ')+'.';
-   if(conflictLevel>=.45)draft+='\n⚠️ توجد أدلة مختلطة/متعارضة بدرجة '+Math.round(conflictLevel*100)+'%؛ لا تُعامل النتيجة كحقيقة محسومة.';
-   if(co?.gn)draft+='\nتحليل V3 البنيوي: P_after≈'+co.gn[0].toFixed(2)+'، ΔP≈'+co.gn[1].toFixed(2)+'، G≈'+co.gn[2].toFixed(2)+'.';
- }
- let evidenceText=rel.slice(0,10).map(r=>`- ${r.a} | ${r.relation} | ${r.b} | confidence=${r.confidence||0} | source=${r.sourceTitle||r.source||'local'} | evidence=${r.evidence||''}`).join('\n');
- let grounded=await callAI([{role:'system',content:'أنت محرك تحليل بحثي علائقي. أجب بالعربية بشرح تفصيلي ومنظم، وليس بكلمة أو تصنيف فقط. استخدم الأدلة المعطاة ولا تخترع حقائق أو مصادر. يجب أن تتضمن الإجابة: خلاصة مباشرة، ماذا فهمت من السؤال، ماذا وجدت المصادر فعلياً، تحليل العلاقة أو آلية التأثير خطوة بخطوة، مقارنة اتفاق/اختلاف المصادر، ما يمكن استنتاجه وما لا يمكن إثباته، أثر الزمن إن وجد، والمصادر المستخدمة. ميّز بوضوح بين الارتباط والسببية. إذا كانت الأدلة مقتطفات فقط فصرّح بذلك. لا تقل «علاقة سببية» وحدها؛ اشرح لماذا وكيف وبأي دليل.'},{role:'user',content:'السؤال: '+q+'\nالنية: '+c.type+'\nالزمن: '+(tc.period||qt)+'\nالمفاهيم: '+cs.join('، ')+'\nالأدلة:\n'+evidenceText+'\nتحليل البحث: '+JSON.stringify(analysis||{})+'\nمسودة: '+draft}]);
- let finalText=grounded||buildDetailedAnswer(q,c,cs,tc,rel,searched,analysis,cons,co);
- addMsg('assistant',finalText+(searched.length?'\n\nتم حفظ الأدلة الجديدة في المستودع مع مصدرها وزمنها، وحالتها «غير متحقق» إلى أن يتم التحقق منها.':''));
- if(searched.length && $('allowWeb').checked){
-   const resultText='نتائج البحث المضافة إلى المحادثة:\n\n'+searched.slice(0,8).map((r,i)=>`${i+1}. ${r.sourceTitle||r.title||r.source||'مصدر'}\n${r.snippet||'لا يوجد مقتطف متاح.'}${r.url?'\n'+r.url:''}`).join('\n\n');
-   addMsg('assistant',resultText);
- }
-}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مساعد الذكاء الاصطناعي الذكي</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
 
-function buildDetailedAnswer(q,c,cs,tc,rel,searched,analysis,cons,co){
- const names=cs.slice(0,6).join('، '); let out='';
- out+='## الخلاصة\n';
- if(rel.length){const r=rel[0];out+=`أقوى علاقة مستخرجة بين «${r.a}» و«${r.b}» هي **${r.relation}**. هذه نتيجة تحليلية أولية وليست إثباتاً سببياً مطلقاً.\n\n`}
- if(typeof hopPath!=='undefined'&&hopPath){out+=`**مسار الاستدلال متعدد الخطوات:** ${hopPath.nodes.join(' → ')}\nثقة المسار: ${Math.round(hopPath.confidence*100)}%\n\n`; }
- else out+='لم تتوفر علاقة موثوقة بما يكفي لإصدار حكم نهائي، لذلك سأفصل بين الأدلة والاستنتاج.\n\n';
- out+='## 1) فهم السؤال\n';
- out+=`المفاهيم التي بُني عليها التحليل: ${names}. نوع السؤال: ${c.type==='causal'?'تأثير/سببية':c.type==='explanatory'?'تفسيري':c.type==='temporal'?'زمني':'علاقة عامة'}. السياق الزمني: ${tc.period||fmt(tc.at)}.\n\n`;
- out+='## 2) استخراج الإجابات من البحث\n';
- if(analysis){out+=`تم جمع ${analysis.resultCount} نتيجة من ${analysis.sourceCount} مصادر عبر ${analysis.queries.length} استعلامات.\n`; if(analysis.signals.length){analysis.signals.slice(0,6).forEach(x=>out+=`• ${x.label}: ${x.count} نتائج، من ${(x.sources||[]).join('، ')}، وثقة تجميعية ${Math.round(x.score*100)}%.\n`)}else out+='لم تكن مقتطفات البحث كافية لاستخراج اتجاه علائقي واضح.\n'} else out+='لم يُستخدم بحث خارجي أو لم يكتمل التحليل التجميعي.\n';
- out+='\n## 3) التحليل التفصيلي للعلاقة\n';
- if(rel.length){rel.slice(0,5).forEach((r,i)=>{out+=`${i+1}. «${r.a}» ${r.relation} «${r.b}». الثقة ${Math.round((r.confidence||0)*100)}%، وقوة العلاقة ${Math.round((r.strength||0)*100)}%.`;if(r.evidence)out+=` الدليل: ${r.evidence}`;out+='\n'}); if(c.type==='causal')out+='\nالاستنتاج السببي لا يُبنى من كلمة «يؤثر» فقط. نبحث عن تكرار النتيجة بين مصادر مستقلة، وتسلسل زمني معقول، وآلية تفسر انتقال التأثير، ودراسة أو بيانات تسمح بتمييز السببية عن مجرد الارتباط.\n'}else out+='لا توجد علاقة مستخرجة بدرجة ثقة كافية.\n';
- if(searched.length){out+='\n## 4) مقارنة المصادر\n';const by={};searched.slice(0,16).forEach(r=>(by[r.source]??=[]).push(r));for(const [src,arr] of Object.entries(by))out+=`• ${src}: ${arr.length} نتائج؛ ${arr.slice(0,3).map(x=>x.title).filter(Boolean).join('؛ ')}\n`;out+=(cons.length||analysis?.conflicts)?`\n⚠️ تقييم التعارض: ${Math.round((cons[0]?.severity||analysis?.conflictSeverity||0)*100)}%. لا يكفي اختلاف الاتجاه وحده لإثبات التعارض؛ تم احتساب تداخل الزمن وقوة الأدلة وتنوع المصادر. لذلك النتيجة مشروطة وليست حقيقة محسومة.\n`:'\nلم يظهر تعارض قوي بعد فحص الاتجاه والزمن والمصادر، مع بقاء الحاجة لمراجعة المصادر الأصلية.\n'}
- out+='\n## 5) الاستنتاج\n';
- if(analysis?.top)out+=`أقوى إشارة هي «${analysis.top.label}»، ظهرت في ${analysis.top.count} نتائج ومن مصادر ${(analysis.top.sources||[]).join('، ')}. لذلك يمكن اعتبارها فرضية مدعومة نسبياً ضمن الأدلة التي جُمعت.\n`;else out+='المتاح يسمح بوصف العلاقة كارتباط/فرضية، وليس كحقيقة سببية نهائية.\n';
- out+='\n## 6) حدود النتيجة\nلا يمكن اعتبار عدد النتائج وحده دليلاً على السببية. كما أن مقتطفات البحث قد تكون ناقصة أو خارج سياقها؛ لذلك تُحفظ الأدلة الجديدة بحالة «غير متحقق» حتى يمكن مراجعتها.\n';
- if(co)out+=`\n## 7) تحليل V3 البنيوي\nExact Engine: P قبل ${co.ex.pBefore} ← P بعد ${co.ex.pAfter}، ΔP=${co.ex.deltaP}، G=${co.ex.g}.`+(co.gn?` GNN: P بعد≈${co.gn[0].toFixed(2)}، ΔP≈${co.gn[1].toFixed(2)}، G≈${co.gn[2].toFixed(2)}.`:'')+' هذه مؤشرات على بنية الرسم المستخرج وليست بديلاً عن الدليل الواقعي.\n';
- out+='\n## 8) المصادر المستخدمة\n'; if(searched.length)searched.slice(0,10).forEach((r,i)=>out+=`${i+1}. ${r.sourceTitle||r.title||r.source} — ${r.source}${r.url?' — '+r.url:''}\n`);else out+='المعرفة المحلية فقط.\n'; return out;
-}
-async function legacyAnswer(){let q=$('question').value.trim();if(!q)return;let qt=new Date($('queryTime').value||new Date()).toISOString(),tc=timeContext(q,$('queryPeriod').value),c=classify(q),cs=extract(q);addMsg('user',q);$('question').value='';if(cs.length<2){$('understanding').innerHTML=explain(c,cs,tc,[],null);addMsg('assistant','لم أستطع استخراج مفهومين واضحين. جرّب صياغة مثل: «ما العلاقة بين قلة النوم والتركيز؟»');return}let[a,b]=cs,rel=findRel(a,b,qt,tc),searched=[],web=false;if(!rel.length&&$('allowWeb').checked){web=true;searched=await searchForQuestion(a+' '+b,cs);if(searched.length){let t=new Date().toISOString();for(let s of searched){vault.push({a,b,relation:'ارتباط من نتيجة بحث — يحتاج تحققاً',strength:.2,confidence:.3,source:s.source||'external-search',sourceTitle:s.title,evidence:s.snippet,sourceUrl:s.url,createdAt:t,lastVerifiedAt:t,queryTime:qt,query:q,validFrom:/^\d{4}$/.test(tc.period)?tc.period+'-01-01':t.slice(0,10),validTo:null,derived:true})}save();rel=findRel(a,b,qt,tc)}}let co=core(rel,a,b);$('understanding').innerHTML=explain(c,cs,tc,rel,co);let text;if(rel.length){let r=rel[0];text=`فهمت سؤالك على أنه بحث عن علاقة بين «${a}» و«${b}».\n\nأقوى علاقة متاحة: «${r.a}» ${r.relation} «${r.b}».\nدرجة المطابقة: ${Math.round(r._score*100)}%\nالثقة المسجلة: ${Math.round((r.confidence||0)*100)}%\nقوة العلاقة: ${Math.round((r.strength||0)*100)}%\nالزمن المستخدم: ${tc.period||fmt(qt)}\nآخر تحقق: ${fmt(r.lastVerifiedAt)}\nالمصدر: ${r.sourceTitle||r.source||'محلي'}`;if(c.type==='causal')text+='\n\nتنبيه: هذا تحليل علاقة/تأثير وليس إثباتاً سببياً مطلقاً.'}else text=`لم أجد علاقة موثوقة كفاية بين «${a}» و«${b}» في المستودع. تم حفظ وقت السؤال، ويمكن البحث الخارجي عند تفعيله.`;if(web&&searched.length)text+='\n\nأضفت نتائج البحث إلى المستودع كأدلة منخفضة الثقة تحتاج تحققاً؛ لم أتعامل معها كحقيقة نهائية.';addMsg('assistant',text)}
-function addMsg(role,text){let d=document.createElement('div');d.className='msg '+role;d.innerHTML=esc(text)+'<div class="time">'+fmt(new Date().toISOString())+'</div>';$('chatLog').appendChild(d);$('chatLog').scrollTop=$('chatLog').scrollHeight}$('saveAi').onclick=saveAI;$('testAi').onclick=async()=>{let x=await callAI([{role:'user',content:'أجب بكلمة واحدة: جاهز'}]);$('aiStatus').textContent=x?'الاتصال ناجح: '+x:'فشل الاختبار.'};initAI();addMsg('assistant','مرحباً. اكتب سؤالك بصيغة طبيعية. سأحاول استخراج المفاهيم والزمن، ثم أبحث في المستودع وأشغّل نواة العلاقات عند توفر بنية مناسبة.');$('send').onclick=answer;$('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();answer()}});
-function renderVault(){let n=vault.length,avg=n?vault.reduce((s,x)=>s+(x.confidence||0),0)/n:0;$('stats').innerHTML=`<div class="pill">${n} علاقة/دليل</div><div class="pill">متوسط الثقة ${Math.round(avg*100)}%</div><div class="pill">محلي على الجهاز</div>`;$('vaultList').innerHTML=vault.slice().reverse().slice(0,150).map(r=>`<div class="item"><b>${esc(r.a)} → ${esc(r.b)}</b><br>${esc(r.relation)}<br><span class="small">الثقة ${Math.round((r.confidence||0)*100)}%${r.evidenceMeta?.rawConfidence!=null?' (خام '+Math.round(r.evidenceMeta.rawConfidence*100)+'%)':''} • الإنشاء ${esc(fmt(r.createdAt))} • آخر تحقق ${esc(fmt(r.lastVerifiedAt))} • سؤال: ${esc(fmt(r.queryTime))}</span>${r.sourceUrl?`<br><a href="${esc(r.sourceUrl)}" target="_blank">فتح المصدر</a>`:''}${r.evidence?`<div class="small">${esc(r.evidence)}</div>`:''}</div>`).join('')||'<div class="empty">المستودع فارغ.</div>'}renderVault();searchInit();$('saveSearch').onclick=saveSearch;$('testSearch').onclick=async()=>{saveSearch();let r=await searchOpen('العلاقة بين التضخم وأسعار الفائدة');$('searchPreview').innerHTML=r.slice(0,12).map(x=>'<div class="source"><b>'+esc(x.sourceTitle||x.title)+'</b><div class="small">'+esc(x.source)+' — '+esc(x.snippet||'')+'</div><a href="'+esc(x.url)+'" target="_blank" rel="noopener">فتح المصدر</a></div>').join('')||'<div class="empty">لا توجد نتائج.</div>'};
-$('export').onclick=()=>{let b=new Blob([JSON.stringify(vault,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='relational-ai-vault.json';a.click()};$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=e=>{let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{let x=JSON.parse(r.result);if(!Array.isArray(x))throw 0;vault=x;save();alert('تم الاستيراد')}catch{alert('JSON غير صالح')}};r.readAsText(f)};$('clearVault').onclick=()=>{if(confirm('مسح المستودع؟')){vault=[];save()}};
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tab').forEach(x=>x.hidden=x.id!==b.dataset.tab);if(b.dataset.tab==='vault')renderVault()});
-function parseEdges(t,n){let e=new Set();for(let s of t.split(/[,;\n]+/)){s=s.trim();if(!s)continue;let p=s.replace(/\s/g,'').split('-'),u=+p[0],v=+p[1];if(p.length!==2||!Number.isInteger(u)||!Number.isInteger(v)||u===v||u<0||v<0||u>=n||v>=n)throw Error('علاقة غير صحيحة: '+s);e.add(edgeKey({u,v}))}return e}function draw(n,e,d){let svg=$('graph');while(svg.firstChild)svg.firstChild.remove();let NS='http://www.w3.org/2000/svg',cx=350,cy=150,r=Math.min(110,40+n*4),pos=[];for(let i=0;i<n;i++){let a=-Math.PI/2+2*Math.PI*i/n;pos.push([cx+r*Math.cos(a),cy+r*Math.sin(a)])}for(let k of e){let[u,v]=k.split('-').map(Number),l=document.createElementNS(NS,'line');l.setAttribute('x1',pos[u][0]);l.setAttribute('y1',pos[u][1]);l.setAttribute('x2',pos[v][0]);l.setAttribute('y2',pos[v][1]);l.setAttribute('stroke-width','2');svg.appendChild(l)}for(let i=0;i<n;i++){let c=document.createElementNS(NS,'circle');c.setAttribute('cx',pos[i][0]);c.setAttribute('cy',pos[i][1]);c.setAttribute('r','17');c.setAttribute('stroke-width','2');svg.appendChild(c);let t=document.createElementNS(NS,'text');t.setAttribute('x',pos[i][0]);t.setAttribute('y',pos[i][1]+5);t.setAttribute('text-anchor','middle');t.textContent=i;svg.appendChild(t)}}$('calc').onclick=()=>{try{let n=+$('nodes').value,u=+$('du').value,v=+$('dv').value,op=$('op').value,e=parseEdges($('edges').value,n),x=exactUpdate(n,e,{u,v},op),p=gnnPredict(n,e,u,v,op);$('labResults').innerHTML=`<b class="ok">Exact Engine</b>${['pBefore','pAfter','deltaP','g'].map(k=>`<div class="metric"><span>${k}</span><b>${x[k]}</b></div>`).join('')}<b>GNN</b>${p.map((z,i)=>`<div class="metric"><span>${['P after','ΔP','G'][i]}</span><b>${z.toFixed(3)}</b></div>`).join('')}<div class="small">Added: ${x.added.join(', ')||'—'}<br>Removed: ${x.removed.join(', ')||'—'}</div>`;draw(n,e,{u,v})}catch(err){$('labResults').innerHTML='<span class="warn">'+esc(err.message)+'</span>'}};$('demo').onclick=()=>{$('nodes').value=8;$('edges').value='0-1,1-2,2-3,3-4,4-5,5-6';$('du').value=0;$('dv').value=2;$('op').value='ADD';$('calc').click()};$('calc').click();
+        body {
+            background-color: #131314;
+            color: #e3e3e3;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* الشريط الجانبي */
+        .sidebar {
+            width: 260px;
+            background-color: #1e1f20;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            border-left: 1px solid #333;
+        }
+
+        .new-chat-btn {
+            background-color: #282a2c;
+            color: #e3e3e3;
+            border: 1px solid #444;
+            padding: 12px;
+            border-radius: 25px;
+            cursor: pointer;
+            text-align: right;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            transition: background 0.2s;
+        }
+
+        .new-chat-btn:hover {
+            background-color: #3c4043;
+        }
+
+        .history-list {
+            list-style: none;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+
+        .history-item {
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #c4c7c5;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+
+        .history-item:hover {
+            background-color: #282a2c;
+        }
+
+        /* المحتوى الرئيسي */
+        .main-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100vh;
+            background-color: #131314;
+        }
+
+        /* رأس الصفحة */
+        .chat-header {
+            padding: 20px;
+            font-size: 18px;
+            font-weight: 500;
+            color: #c4c7c5;
+            border-bottom: 1px solid #222;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* صندوق المحادثة */
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .message {
+            display: flex;
+            gap: 15px;
+            max-width: 85%;
+            line-height: 1.6;
+            font-size: 15px;
+        }
+
+        .message.user {
+            align-self: flex-start;
+            background-color: #1e1f20;
+            padding: 15px 20px;
+            border-radius: 18px;
+            border-top-right-radius: 4px;
+        }
+
+        .message.ai {
+            align-self: flex-end;
+            background-color: transparent;
+            padding: 10px 0;
+            color: #e3e3e3;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .user .avatar {
+            background-color: #555;
+            color: #fff;
+        }
+
+        .ai .avatar {
+            background: linear-gradient(135deg, #4285f4, #9b72cb, #d96570);
+            color: #fff;
+        }
+
+        /* منطقة الإدخال */
+        .input-container {
+            padding: 20px;
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto 10px auto;
+        }
+
+        .input-box {
+            background-color: #1e1f20;
+            border-radius: 28px;
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+            border: 1px solid #333;
+        }
+
+        .input-box input {
+            flex-grow: 1;
+            background: transparent;
+            border: none;
+            color: #e3e3e3;
+            font-size: 16px;
+            outline: none;
+            padding: 8px;
+        }
+
+        .input-box input::placeholder {
+            color: #8e918f;
+        }
+
+        .send-btn {
+            background: #8ab4f8;
+            color: #202124;
+            border: none;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+
+        .send-btn:hover {
+            opacity: 0.9;
+        }
+
+        /* التجاوب مع الجوال */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- الشريط الجانبي (يختفي في الشاشات الصغيرة) -->
+    <div class="sidebar">
+        <button class="new-chat-btn">
+            <span>+</span> محادثة جديدة
+        </button>
+        <div style="font-size: 12px; color: #8e918f; margin-bottom: 10px; padding-right: 5px;">السجل</div>
+        <ul class="history-list">
+            <li class="history-item">محادثة تصميم الموقع الأول</li>
+            <li class="history-item">أفكار تطوير الواجهة</li>
+        </ul>
+    </div>
+
+    <!-- المحتوى الرئيسي للمحادثة -->
+    <div class="main-container">
+        <div class="chat-header">
+            <span>مساعدك الذكي (AI Companion)</span>
+        </div>
+
+        <div class="chat-messages">
+            <!-- رسالة من الذكاء الاصطناعي ترحب بالمستخدم -->
+            <div class="message ai">
+                <div class="avatar">AI</div>
+                <div>مرحباً بك! أنا مساعدك الذكي العلائقي. كيف يمكنني مساعدتك اليوم في أفكارك أو مشاريعك؟</div>
+            </div>
+
+            <!-- رسالة تجريبية من المستخدم -->
+            <div class="message user">
+                <div class="avatar">أ</div>
+                <div>أهلاً بك، أود تطوير هذا الموقع ليصبح أكثر جاذبية.</div>
+            </div>
+
+            <div class="message ai">
+                <div class="avatar">AI</div>
+                <div>بالتأكيد! لقد قمت للتو بتحديث الواجهة لتصبح عصرية ونظيفة تشبه أنظمة الذكاء الاصطناعي المتقدمة. هل يعجبك هذا التصميم؟</div>
+            </div>
+        </div>
+
+        <div class="input-container">
+            <div class="input-box">
+                <input type="text" placeholder="أدخل رسالتك هنا...">
+                <button class="send-btn">↑</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
+v=+$('dv').value,op=$('op').value,e=parseEdges($('edges').value,n),x=exactUpdate(n,e,{u,v},op),p=gnnPredict(n,e,u,v,op);$('labResults').innerHTML=`<b class="ok">Exact Engine</b>${['pBefore','pAfter','deltaP','g'].map(k=>`<div class="metric"><span>${k}</span><b>${x[k]}</b></div>`).join('')}<b>GNN</b>${p.map((z,i)=>`<div class="metric"><span>${['P after','ΔP','G'][i]}</span><b>${z.toFixed(3)}</b></div>`).join('')}<div class="small">Added: ${x.added.join(', ')||'—'}<br>Removed: ${x.removed.join(', ')||'—'}</div>`;draw(n,e,{u,v})}catch(err){$('labResults').innerHTML='<span class="warn">'+esc(err.message)+'</span>'}};$('demo').onclick=()=>{$('nodes').value=8;$('edges').value='0-1,1-2,2-3,3-4,4-5,5-6';$('du').value=0;$('dv').value=2;$('op').value='ADD';$('calc').click()};$('calc').click();
 if('serviceWorker'in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>
